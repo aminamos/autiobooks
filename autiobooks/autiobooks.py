@@ -84,7 +84,7 @@ def start_gui():
         values=voices_emojified,
         state="readonly"
     )
-    voice_combo.set(voices[0])  # Set default selection
+    voice_combo.set(voices_emojified[0])  # Set default selection
     voice_combo.pack(side=tk.LEFT, pady=10, padx=5)
     
     pygame.mixer.init()
@@ -288,6 +288,7 @@ def start_gui():
             print(warning)
             # create a warning message box to say this
             messagebox.showwarning("Warning", warning)
+            return
 
         if file_label.cget("text"):
             file_path = file_label.cget("text")
