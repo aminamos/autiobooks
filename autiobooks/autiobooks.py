@@ -175,12 +175,12 @@ def start_gui():
                 font=('Arial', 12)
             )
             play_label.pack(side="left")
-
+            
             file_name_label = tk.Label(
-                row_frame,
-                text=chapter.file_name,
-                font=('Arial', 12)
-            )
+                row_frame, 
+                text=chapter.display_name if hasattr(chapter, 'display_name') 
+                    else Path(chapter.file_name).stem.replace('_', ' ').title()
+            )            
             file_name_label.pack(side="left")
 
             word_string = "words" if word_count != 1 else "word"
@@ -254,8 +254,13 @@ def start_gui():
                     text = chapter.extracted_text
                     if i == 1:
                         text = f"{title} by {creator}.\n{text}"
-                    wav_filename = filename.replace('.epub', f'_chapter_{i}.wav')
-                    progress_label.config(text=f"Converting chapter {i} of {len(chapters_selected)}")
+                    chapter_title = getattr(chapter, 'display_name', f"Chapter {i}")
+                    safe_title = "".join(c for c in chapter_title if c.isalnum() or c in " _-")
+                    wav_filename = filename.replace('.epub', f'_{safe_title[:50]}.wav')
+
+                    chapter_name = getattr(chapter, 'display_name', f"Chapter {i}")
+                    progress_label.config(text=f"Converting: {chapter_name[:30]}...")
+                    
                     if convert_text_to_wav_file(text, voice,
                                                 speed, wav_filename):
                         wav_files.append(wav_filename)

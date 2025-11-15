@@ -72,30 +72,68 @@ def is_valid_chapter(chapter):
             return True
     return False
 
+def extract_chapter_content(soup):
+    """Extracts all readable content including headings, while preserving structure"""
+    content = []
+    
+    # 1. Handle special elements first
+    if epigraph := soup.find('blockquote', {'epub:type': 'epigraph'}):
+        content.append(f"EPIGRAPH: {epigraph.get_text(' ', strip=True)}")
+
+    # 2. Process all content-bearing elements
+    for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'li']):
+        # Skip elements in headers/footers/navigation
+        if element.find_parents(['header', 'footer', 'nav', 'aside']):
+            continue
+            
+        text = element.get_text(' ', strip=True)
+        if not text or len(text.split()) < 2:
+            continue  # Skip empty or single-word elements
+
+        # Format based on element type
+        if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+            # Add newline before headings and emphasize
+            level = int(element.name[1])
+            content.append(f"\n{'#' * level} {text}")
+        elif element.name == 'li':
+            content.append(f"• {text}")
+        else:
+            content.append(text)
+    
+    return '\n\n'.join(content)
+
+def process_chapter(chapter):
+    soup = BeautifulSoup(chapter.get_content(), 'lxml')
+    
+    # Title extraction (unchanged)
+    title = None
+    if header := soup.find('header'):
+        if h1 := header.find('h1'):
+            title = ' '.join(h1.stripped_strings)
+    chapter.display_name = title or Path(chapter.file_name).stem.replace('_', ' ').title()
+    
+    # Content extraction (new robust version)
+    chapter.extracted_text = extract_chapter_content(soup)
+    return chapter
 
 def find_document_chapters_and_extract_texts(book):
-    """Returns every chapter that is an ITEM_DOCUMENT
-    and enriches each chapter with extracted_text."""
     document_chapters = []
+    
     for chapter in book.get_items():
         if not is_valid_chapter(chapter):
             continue
+            
         try:
-            xml = chapter.get_body_content()
-        except:
-            try:
-                xml = chapter.get_content()
-            except:
+            # Skip pure TOC files (detected by presence of nav/ol.toc)
+            soup = BeautifulSoup(chapter.get_content(), 'lxml')
+            if soup.find('nav') or soup.select('ol.toc'):
                 continue
-        soup = BeautifulSoup(xml, features='lxml')
-        chapter_text = ''
-        html_content_tags = ['title', 'p', 'h1', 'h2', 'h3', 'h4', 'li']
-        for child in soup.find_all(html_content_tags):
-            inner_text = child.text.strip() if child.text else ""
-            if inner_text:
-                chapter_text += inner_text + '\n'
-        chapter.extracted_text = chapter_text
-        document_chapters.append(chapter)
+                
+            processed = process_chapter(chapter)
+            document_chapters.append(processed)
+            
+        except Exception as e:
+            print(f"Skipping {chapter.file_name}: {str(e)}")
     return document_chapters
 
 
