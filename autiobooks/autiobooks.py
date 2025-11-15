@@ -16,6 +16,7 @@ from .voices_lang import voices, voices_emojified, deemojify_voice
 
 playing_sample = False
 book = None
+voice_preview_playing = {}  # Track which voice is currently playing in preview
 
 
 def start_gui():
@@ -86,6 +87,18 @@ def start_gui():
     )
     voice_combo.set(voices_emojified[0])  # Set default selection
     voice_combo.pack(side=tk.LEFT, pady=10, padx=5)
+    
+    # Add button to preview voices
+    # in new window
+    preview_button = tk.Button(
+        voice_frame,
+        text="🎵 Preview Voices",
+        command=lambda: open_voice_preview(root, voice_combo, speed_entry),
+        bg='lightblue',
+        fg='black',
+        font=('Arial', 11)
+    )
+    preview_button.pack(side=tk.LEFT, pady=10, padx=5)
     
     pygame.mixer.init()
     pygame.mixer.music.set_volume(0.7)
@@ -393,6 +406,153 @@ def on_playback_complete(play_label):
     global playing_sample
     playing_sample = False
     play_label.config(text="▶️")
+
+
+def open_voice_preview(parent, voice_combo, speed_entry):
+    """Open a window to preview all available voices"""
+    preview_window = tk.Toplevel(parent)
+    preview_window.title("Voice Preview")
+    preview_window.geometry("600x700")
+    preview_window.resizable(True, True)
+    
+    def cleanup_on_close():
+        """Stop any playing audio and clean up when window closes"""
+        global voice_preview_playing
+        if voice_preview_playing:
+            pygame.mixer.music.stop()
+            voice_preview_playing.clear()
+        preview_window.destroy()
+    
+    preview_window.protocol("WM_DELETE_WINDOW", cleanup_on_close)
+    
+    # Sample text for preview
+    sample_text = "Hello, this is a sample of my voice. I hope you like how I sound."
+    
+    # Create scrollable frame
+    canvas = tk.Canvas(preview_window)
+    scrollbar = ttk.Scrollbar(preview_window, orient="vertical", command=canvas.yview)
+    scrollable_frame = tk.Frame(canvas)
+    
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+    
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    # Instructions
+    instructions = tk.Label(
+        scrollable_frame,
+        text="Click ▶️ to preview each voice. Click 'Select' to choose it.",
+        font=('Arial', 10),
+        fg="gray"
+    )
+    instructions.pack(pady=10)
+    
+    def play_voice_preview(voice_name, voice_key, play_label):
+        """Play a short preview of a voice"""
+        global voice_preview_playing
+        
+        # Stop any currently playing preview
+        if voice_preview_playing:
+            pygame.mixer.music.stop()
+            for v, label in voice_preview_playing.items():
+                label.config(text="▶️")
+            voice_preview_playing.clear()
+        
+        # If clicking the same voice that's playing, stop it
+        if play_label.cget("text") == "⏹️":
+            play_label.config(text="▶️")
+            return
+        
+        play_label.config(text="⏹️")
+        voice_preview_playing[voice_key] = play_label
+        
+        def generate_and_play():
+            try:
+                speed = float(speed_entry.get())
+                audio_segments = gen_audio_segments(sample_text, voice_key, speed, split_pattern=r"")
+                final_audio = np.concatenate(audio_segments)
+                sample_rate = 24000
+                soundfile.write("temp_preview.wav", final_audio, sample_rate)
+                pygame.mixer.music.load("temp_preview.wav")
+                pygame.mixer.music.play()
+                
+                def check_sound_end():
+                    if not pygame.mixer.music.get_busy():
+                        if voice_key in voice_preview_playing:
+                            voice_preview_playing[voice_key].config(text="▶️")
+                            voice_preview_playing.pop(voice_key, None)
+                    else:
+                        preview_window.after(100, check_sound_end)
+                
+                check_sound_end()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to generate preview: {str(e)}")
+                play_label.config(text="▶️")
+                voice_preview_playing.pop(voice_key, None)
+        
+        # Generate audio in a separate thread to avoid blocking UI
+        threading.Thread(target=generate_and_play, daemon=True).start()
+    
+    def select_voice(voice_emojified):
+        """Select a voice and close the preview window"""
+        voice_combo.set(voice_emojified)
+        cleanup_on_close()
+    
+    # Create a row for each voice
+    for voice_key, voice_emojified in zip(voices, voices_emojified):
+        row_frame = tk.Frame(scrollable_frame)
+        row_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Play button
+        play_label = tk.Label(
+            row_frame,
+            text="▶️",
+            font=('Arial', 14),
+            cursor="hand2"
+        )
+        play_label.pack(side=tk.LEFT, padx=5)
+        play_label.bind(
+            "<Button-1>",
+            lambda e, vk=voice_key, ve=voice_emojified, pl=play_label: play_voice_preview(ve, vk, pl)
+        )
+        
+        # Voice name
+        voice_name_label = tk.Label(
+            row_frame,
+            text=voice_emojified,
+            font=('Arial', 11),
+            width=30,
+            anchor="w"
+        )
+        voice_name_label.pack(side=tk.LEFT, padx=5)
+        
+        # Select button
+        select_btn = tk.Button(
+            row_frame,
+            text="Select",
+            command=lambda ve=voice_emojified: select_voice(ve),
+            bg='lightgreen',
+            fg='black',
+            font=('Arial', 10)
+        )
+        select_btn.pack(side=tk.LEFT, padx=5)
+    
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    # Close button at bottom
+    close_button = tk.Button(
+        preview_window,
+        text="Close",
+        command=cleanup_on_close,
+        bg='lightgray',
+        fg='black',
+        font=('Arial', 11)
+    )
+    close_button.pack(pady=10)
 
 
 def main():
